@@ -506,15 +506,8 @@ export const automatonSlice = createSlice({
     },
     addState: (state, action) => {
       const { x, y, isInitial, isFinal } = action.payload;
-
-      // encontrar o menor número disponível
-      let id = 0;
-      while (state.states[`q${id}`]) {
-          id++;
-      }
-
-      const StateId = `q${id}`;
-      const newState = new State(StateId, StateId, x, y, isInitial, isFinal);
+      const id = `q${state.currentStateId}`;
+      const newState = new State(id, id, x, y, isInitial, isFinal);
       
       // Se for estado inicial, remover o status de inicial de outros estados
       if (isInitial) {
@@ -523,7 +516,7 @@ export const automatonSlice = createSlice({
         });
       }
       
-      state.states[StateId] = newState;
+      state.states[id] = newState;
       state.currentStateId += 1;
     },
     updateState: (state, action) => {
