@@ -1,10 +1,11 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  theme: 'light', // 'light' ou 'dark'
-  sidebarOpen: true,
+  theme: 'light',
+  sidebarOpen: false,
   currentView: 'editor', // 'editor', 'simulator', 'tutorial'
-  editorMode: 'visual', // 'visual' ou 'table'
+  menuOpen: false,
+  editorMode: 'visual', // Adicionar modo do editor: 'visual', 'table', etc.
 };
 
 export const uiSlice = createSlice({
@@ -28,8 +29,15 @@ export const uiSlice = createSlice({
     setCurrentView: (state, action) => {
       state.currentView = action.payload;
     },
+    toggleMenu: (state) => {
+      state.menuOpen = !state.menuOpen;
+    },
     setEditorMode: (state, action) => {
       state.editorMode = action.payload;
+    },
+    setType: (state, action) => {
+      // Esta ação deve estar no automatonSlice, não no uiSlice
+      // Vou comentar para evitar conflito
     },
   },
 });
@@ -40,7 +48,9 @@ export const {
   toggleSidebar,
   setSidebarOpen,
   setCurrentView,
+  toggleMenu,
   setEditorMode
+  // setType - removido daqui
 } = uiSlice.actions;
 
 export default uiSlice.reducer;

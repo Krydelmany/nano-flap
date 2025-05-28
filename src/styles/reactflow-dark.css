@@ -1,0 +1,57 @@
+/* ReactFlow Controls Dark Mode */
+.dark .react-flow__controls {
+  box-shadow: 0 0 0 1px rgb(75 85 99);
+}
+
+.dark .react-flow__controls button {
+  background: rgb(31 41 55) !important;
+  border: 1px solid rgb(75 85 99) !important;
+  color: rgb(209 213 219) !important;
+}
+
+.dark .react-flow__controls button:hover {
+  background: rgb(55 65 81) !important;
+}
+
+.dark .react-flow__controls button svg {
+  stroke: rgb(209 213 219) !important;
+  fill: rgb(209 213 219) !important;
+}
+
+/* ReactFlow MiniMap Dark Mode */
+.dark .react-flow__minimap {
+  background: rgb(31 41 55) !important;
+  border: 1px solid rgb(75 85 99) !important;
+}
+
+.dark .react-flow__minimap-mask {
+  fill: rgba(55, 65, 81, 0.6) !important;
+}
+
+.dark .react-flow__minimap-node {
+  fill: rgb(156 163 175) !important;
+  stroke: rgb(75 85 99) !important;
+}
+
+/* ReactFlow Background Dark Mode */
+.dark .react-flow__background {
+  background-color: rgb(17 24 39) !important;
+}
+
+/* ReactFlow Edges Dark Mode */
+.dark .react-flow__edge-path {
+  stroke: rgb(156 163 175) !important;
+}
+
+.dark .react-flow__edge-text {
+  fill: rgb(209 213 219) !important;
+}
+
+.dark .react-flow__edge .react-flow__edge-textbg {
+  fill: rgb(31 41 55) !important;
+}
+
+/* Context menu should always be on top */
+.state-context-menu {
+  z-index: 99999 !important;
+}

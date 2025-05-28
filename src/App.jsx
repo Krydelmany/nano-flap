@@ -6,7 +6,6 @@ import Sidebar from './components/layout/Sidebar';
 import EditorView from './components/automaton/EditorView';
 import SimulatorView from './components/automaton/SimulatorView';
 import TutorialView from './components/tutorial/TutorialView';
-import Tutorial from './components/tutorial/Tutorial';
 
 function App() {
   const dispatch = useDispatch();
@@ -41,8 +40,7 @@ function App() {
           {currentView === 'tutorial' && <TutorialView />}
         </main>
       </div>
-      
-      {tutorialActive && <Tutorial />}
+    
     </div>
   );
 }
