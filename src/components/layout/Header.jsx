@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { toggleTheme, toggleSidebar, setCurrentView, toggleMenu } from '../../models/uiSlice';
 import { startTutorial } from '../../models/tutorialSlice';
+import CreditsModal from './CreditsModal';
 
 const Header = () => {
   const dispatch = useDispatch();
   const { theme, currentView } = useSelector((state) => state.ui);
   const { states, transitions, alphabet } = useSelector((state) => state.automaton);
+  const [showCredits, setShowCredits] = useState(false);
 
   // Contadores e validações
   const stateCount = Object.keys(states).length;
@@ -150,13 +152,13 @@ const Header = () => {
           </button>
 
           <button 
-            onClick={() => dispatch(toggleMenu())}
+            onClick={() => setShowCredits(true)}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 group"
-            aria-label="Menu principal"
-            title="Menu"
+            aria-label="Créditos"
+            title="Créditos"
           >
-            <svg className="w-5 h-5 text-gray-600 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+            <svg className="w-5 h-5 text-gray-600 dark:text-gray-300 group-hover:text-purple-600 dark:group-hover:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
           </button>
           
@@ -178,6 +180,12 @@ const Header = () => {
           </button>
         </div>
       </div>
+
+      {/* Modal de Créditos */}
+      <CreditsModal 
+        isOpen={showCredits} 
+        onClose={() => setShowCredits(false)} 
+      />
     </header>
   );
 };
