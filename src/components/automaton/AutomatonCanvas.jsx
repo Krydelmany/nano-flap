@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import ReactFlow, {
   Background,
@@ -6,382 +6,283 @@ import ReactFlow, {
   MiniMap,
   useNodesState,
   useEdgesState,
-  ReactFlowProvider,
+  Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import '../../styles/reactflow-dark.css';
 
-import { 
-  addState, 
-  updateState, 
-  removeState, 
-  addTransition, 
-  removeTransition 
+import StateNode from './StateNode';
+import {
+  addStateToActiveAutomaton,
+  addTransition,
+  removeState,
+  removeTransition,
+  updateState,
 } from '../../models/automatonSlice';
-
-// Componentes personalizados para os nós
-const StateNode = ({ data, isConnectable, id }) => {
-  return (
-    <div 
-      className={`node ${data.isInitial ? 'node-initial' : ''} ${data.isFinal ? 'node-final' : ''}`}
-      data-nodeid={id} // Adicionando atributo para identificação
-    >
-      {data.label}
-    </div>
-  );
-};
+import TransitionSymbolModal from './TransitionSymbolModal';
 
 const nodeTypes = {
-  state: StateNode,
+  stateNode: StateNode,
 };
 
 const AutomatonCanvas = () => {
   const dispatch = useDispatch();
-  const { states, transitions, type } = useSelector((state) => state.automaton);
-  const reactFlowWrapper = useRef(null);
+  const { states, transitions, alphabet } = useSelector((state) => state.automaton);
   
-  // Estado para controlar o arrasto de transições
-  const [dragState, setDragState] = useState({
-    isDragging: false,
-    fromNodeId: null,
-    mousePosition: { x: 0, y: 0 }
-  });
-  
-  // Estado para controlar o modal de contexto
-  const [contextMenu, setContextMenu] = useState({
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [isAddingState, setIsAddingState] = useState(false);
+  const [isAddingTransition, setIsAddingTransition] = useState(false);
+  const [selectedStateForTransition, setSelectedStateForTransition] = useState(null);
+
+  // Estado para controlar o modal de transição
+  const [transitionModal, setTransitionModal] = useState({
     isOpen: false,
-    node: null,
-    position: { x: 0, y: 0 }
+    sourceId: null,
+    targetId: null
   });
   
-  // Converter estados e transições para o formato do ReactFlow
-  const initialNodes = Object.values(states).map(state => ({
-    id: state.id,
-    type: 'state',
-    position: { x: state.x, y: state.y },
-    data: { 
-      label: state.label,
-      isInitial: state.isInitial,
-      isFinal: state.isFinal,
-    },
-  }));
-  
-  const initialEdges = Object.values(transitions).map(transition => ({
-    id: transition.id,
-    source: transition.from,
-    target: transition.to,
-    label: transition.symbol,
-    type: 'default',
-    animated: transition.symbol === 'ε',
-    style: { stroke: '#888' },
-    labelStyle: { fill: '#888', fontWeight: 500 },
-    labelBgStyle: { fill: 'rgba(255, 255, 255, 0.75)' },
-  }));
-  
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  
-  // Atualizar nós e arestas quando os estados e transições mudarem
-  React.useEffect(() => {
-    const updatedNodes = Object.values(states).map(state => ({
+  // Converter estados Redux para nós ReactFlow
+  useEffect(() => {
+    const nodeList = Object.values(states).map(state => ({
       id: state.id,
-      type: 'state',
+      type: 'stateNode',
       position: { x: state.x, y: state.y },
       data: { 
-        label: state.label,
-        isInitial: state.isInitial,
-        isFinal: state.isFinal,
+        state,
+        onStateClick: handleStateClick,
+        onStateDelete: handleStateDelete,
+        onStateUpdate: handleStateUpdate,
+        isSelected: selectedStateForTransition === state.id,
+        isAddingTransition,
+        selectedStateForTransition, // Passar o estado selecionado
       },
     }));
-    
-    const updatedEdges = Object.values(transitions).map(transition => ({
+    setNodes(nodeList);
+  }, [states, selectedStateForTransition, isAddingTransition, setNodes]);
+
+  // Converter transições Redux para arestas ReactFlow
+  useEffect(() => {
+    const edgeList = Object.values(transitions).map(transition => ({
       id: transition.id,
       source: transition.from,
       target: transition.to,
       label: transition.symbol,
       type: 'default',
-      animated: transition.symbol === 'ε',
-      style: { stroke: '#888' },
-      labelStyle: { fill: '#888', fontWeight: 500 },
-      labelBgStyle: { fill: 'rgba(255, 255, 255, 0.75)' },
+      animated: false,
+      style: { 
+        stroke: '#888', 
+        strokeWidth: 2,
+        strokeDasharray: '0',
+      },
+      labelStyle: { fill: '#000', fontWeight: 600 },
+      labelBgStyle: { fill: '#fff', fillOpacity: 0.8 },
+      markerEnd: {
+        type: 'arrow',
+        color: '#888',
+        width: 15,
+        height: 20,
+      },
+      data: { transition },
     }));
+    setEdges(edgeList);
+  }, [transitions, setEdges]);
+
+  // Manipular mudanças de posição dos nós
+  const handleNodesChange = useCallback((changes) => {
+    onNodesChange(changes);
     
-    setNodes(updatedNodes);
-    setEdges(updatedEdges);
-  }, [states, transitions, setNodes, setEdges]);
-  
-  // Adicionar event listeners para mouse
-  React.useEffect(() => {
-    const handleMouseMove = (event) => {
-      if (dragState.isDragging) {
-        setDragState(prev => ({
-          ...prev,
-          mousePosition: { x: event.clientX, y: event.clientY }
-        }));
-      }
-    };
-
-    const handleMouseUp = (event) => {
-      if (dragState.isDragging) {
-        // Encontrar o elemento sob o cursor
-        const elementUnderMouse = document.elementFromPoint(event.clientX, event.clientY);
-        // Usar o seletor correto para encontrar o nó
-        const nodeElement = elementUnderMouse?.closest('[data-nodeid]');
-        
-        if (nodeElement) {
-          const targetNodeId = nodeElement.getAttribute('data-nodeid');
-          if (targetNodeId && targetNodeId !== dragState.fromNodeId) {
-            // Criar transição
-            const symbol = prompt('Digite o símbolo para esta transição:');
-            if (symbol) {
-              dispatch(addTransition({
-                from: dragState.fromNodeId,
-                to: targetNodeId,
-                symbol,
-              }));
-            }
-          }
+    // Atualizar posições no Redux
+    const positionChanges = changes.filter(change => change.type === 'position');
+    if (positionChanges.length > 0) {
+      positionChanges.forEach(change => {
+        if (change.position) {
+          dispatch(updateState({
+            id: change.id,
+            x: change.position.x,
+            y: change.position.y,
+          }));
         }
-        
-        // Resetar estado
-        setDragState({
-          isDragging: false,
-          fromNodeId: null,
-          mousePosition: { x: 0, y: 0 }
-        });
-      }
-    };
-
-    if (dragState.isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.addEventListener('contextmenu', (e) => e.preventDefault());
+      });
     }
+  }, [onNodesChange, dispatch]);
 
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('contextmenu', (e) => e.preventDefault());
-    };
-  }, [dragState.isDragging, dragState.fromNodeId, dispatch]);
-
-  // Manipuladores de eventos
-  const onConnect = useCallback((params) => {
-    // Abrir um prompt para o símbolo da transição
-    const symbol = prompt('Digite o símbolo para esta transição:');
-    if (symbol) {
-      dispatch(addTransition({
-        from: params.source,
-        to: params.target,
-        symbol,
-      }));
-    }
-  }, [dispatch]);
-  
-  const onNodeDragStop = useCallback((event, node) => {
-    dispatch(updateState({
-      id: node.id,
-      x: node.position.x,
-      y: node.position.y,
-    }));
-  }, [dispatch]);
-  
-  const onPaneClick = useCallback((event) => {
-    // Adicionar um novo estado ao clicar no painel
-    if (event.target === event.currentTarget) {
-      const rect = event.currentTarget.getBoundingClientRect();
+  // Manipular clique no canvas para adicionar estado
+  const handlePaneClick = useCallback((event) => {
+    if (isAddingState) {
+      const bounds = event.currentTarget.getBoundingClientRect();
       const position = {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
+        x: event.clientX - bounds.left - 25, // Centralizar o nó
+        y: event.clientY - bounds.top - 25,
       };
       
-      // Verificar se é o primeiro estado (será o inicial)
-      const isInitial = Object.keys(states).length === 0;
-      
-      dispatch(addState({
+      dispatch(addStateToActiveAutomaton({
         x: position.x,
         y: position.y,
-        isInitial,
+        isInitial: Object.keys(states).length === 0, // Primeiro estado é inicial
         isFinal: false,
       }));
-    }
-  }, [dispatch, states]);
-  
-  // Manipulador específico para clique do mouse - detecta botão direito
-  const onNodeMouseDown = useCallback((event, node) => {
-    if (event.button === 2) { // Botão direito do mouse
-      event.preventDefault();
-      event.stopPropagation();
       
-      setDragState({
-        isDragging: true,
-        fromNodeId: node.id,
-        mousePosition: { x: event.clientX, y: event.clientY }
-      });
-      return;
+      setIsAddingState(false);
+    } else if (isAddingTransition) {
+      // Cancelar modo de adição de transição se clicar no canvas vazio
+      setIsAddingTransition(false);
+      setSelectedStateForTransition(null);
     }
-  }, []);
-  
-  // Modificar o onNodeContextMenu para abrir o modal em vez do prompt
-  const onNodeContextMenu = useCallback((event, node) => {
-    event.preventDefault();
-    
-    // Só mostrar menu de contexto se não estiver arrastando
-    if (dragState.isDragging) {
-      return;
-    }
-    
-    // Abrir o modal de contexto
-    setContextMenu({
-      isOpen: true,
-      node: node,
-      position: { x: event.clientX, y: event.clientY }
-    });
-  }, [dragState.isDragging]);
-  
-  // Funções para o modal de contexto
-  const handleSetInitial = useCallback(() => {
-    if (contextMenu.node) {
-      dispatch(updateState({
-        id: contextMenu.node.id,
-        isInitial: !contextMenu.node.data.isInitial,
-      }));
-      setContextMenu({ isOpen: false, node: null, position: { x: 0, y: 0 } });
-    }
-  }, [contextMenu.node, dispatch]);
-  
-  const handleSetFinal = useCallback(() => {
-    if (contextMenu.node) {
-      dispatch(updateState({
-        id: contextMenu.node.id,
-        isFinal: !contextMenu.node.data.isFinal,
-      }));
-      setContextMenu({ isOpen: false, node: null, position: { x: 0, y: 0 } });
-    }
-  }, [contextMenu.node, dispatch]);
-  
-  const handleDeleteState = useCallback(() => {
-    if (contextMenu.node) {
-      if (window.confirm(`Tem certeza que deseja excluir o estado ${contextMenu.node.data.label}?`)) {
-        dispatch(removeState(contextMenu.node.id));
+  }, [isAddingState, isAddingTransition, states, dispatch]);
+
+  // Manipular clique em estado
+  const handleStateClick = useCallback((stateId) => {
+    if (isAddingTransition) {
+      if (!selectedStateForTransition) {
+        // Primeiro estado selecionado
+        setSelectedStateForTransition(stateId);
+      } else if (selectedStateForTransition !== stateId) {
+        // Segundo estado selecionado - abrir modal para símbolo
+        setTransitionModal({
+          isOpen: true,
+          sourceId: selectedStateForTransition,
+          targetId: stateId
+        });
       }
-      setContextMenu({ isOpen: false, node: null, position: { x: 0, y: 0 } });
     }
-  }, [contextMenu.node, dispatch]);
-  
-  const closeContextMenu = useCallback(() => {
-    setContextMenu({ isOpen: false, node: null, position: { x: 0, y: 0 } });
-  }, []);
-  
-  const onEdgeContextMenu = useCallback((event, edge) => {
-    event.preventDefault();
+  }, [isAddingTransition, selectedStateForTransition]);
+
+  // Função para adicionar a transição após confirmar no modal
+  const handleAddTransition = useCallback((symbol) => {
+    if (symbol && alphabet.includes(symbol)) {
+      dispatch(addTransition({
+        from: transitionModal.sourceId,
+        to: transitionModal.targetId,
+        symbol: symbol,
+      }));
+      
+      setIsAddingTransition(false);
+      setSelectedStateForTransition(null);
+    }
+  }, [dispatch, alphabet, transitionModal, setIsAddingTransition, setSelectedStateForTransition]);
+
+  // Fechar modal sem adicionar transição
+  const handleCloseModal = useCallback(() => {
+    setTransitionModal({
+      isOpen: false,
+      sourceId: null,
+      targetId: null
+    });
     
-    if (window.confirm(`Deseja remover esta transição?`)) {
+    setIsAddingTransition(false);
+    setSelectedStateForTransition(null);
+  }, [setIsAddingTransition, setSelectedStateForTransition]);
+
+  // Manipular conexão de arestas (para criar transições)
+  const onConnect = useCallback((params) => {
+    setTransitionModal({
+      isOpen: true,
+      sourceId: params.source,
+      targetId: params.target
+    });
+  }, []);
+
+  // Manipular exclusão de estado
+  const handleStateDelete = useCallback((stateId) => {
+    if (window.confirm('Deseja remover este estado?')) {
+      dispatch(removeState(stateId));
+    }
+  }, [dispatch]);
+
+  // Manipular atualização de estado
+  const handleStateUpdate = useCallback((stateId, updates) => {
+    dispatch(updateState({ id: stateId, ...updates }));
+  }, [dispatch]);
+
+  // Manipular clique em aresta para remover
+  const handleEdgeClick = useCallback((event, edge) => {
+    if (window.confirm('Deseja remover esta transição?')) {
       dispatch(removeTransition(edge.id));
     }
   }, [dispatch]);
-  
+
   return (
-    <div 
-      className="h-full border border-gray-300 rounded-md overflow-hidden dark:border-dark-600 automaton-canvas"
-      ref={reactFlowWrapper}
-      onClick={closeContextMenu}
-    >
+    <div className="h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onNodeDragStop={onNodeDragStop}
-        onPaneClick={onPaneClick}
-        onNodeMouseDown={onNodeMouseDown} // Adicionando handler para detectar botão direito
-        onNodeContextMenu={onNodeContextMenu}
-        onEdgeContextMenu={onEdgeContextMenu}
+        onPaneClick={handlePaneClick}
+        onEdgeClick={handleEdgeClick}
         nodeTypes={nodeTypes}
         fitView
+        className={isAddingState ? 'cursor-crosshair' : ''}
       >
         <Background />
         <Controls />
         <MiniMap />
         
-        {/* Linha visual durante o arrasto */}
-        {dragState.isDragging && (
-          <svg
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              pointerEvents: 'none',
-              zIndex: 1000
+        <Panel position="top-left" className="space-x-2">
+          <button
+            onClick={() => {
+              setIsAddingState(!isAddingState);
+              setIsAddingTransition(false);
+              setSelectedStateForTransition(null);
             }}
+            className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              isAddingState
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+            }`}
           >
-            {(() => {
-              const fromNode = nodes.find(n => n.id === dragState.fromNodeId);
-              if (fromNode) {
-                return (
-                  <line
-                    x1={fromNode.position.x + 37.5} // Centro aproximado do nó
-                    y1={fromNode.position.y + 37.5} // Centro aproximado do nó
-                    x2={dragState.mousePosition.x}
-                    y2={dragState.mousePosition.y}
-                    stroke="red"
-                    strokeWidth="2"
-                    strokeDasharray="5,5" // Linha tracejada
-                  />
-                );
+            {isAddingState ? 'Cancelar' : 'Adicionar Estado'}
+          </button>
+          
+          <button
+            onClick={() => {
+              setIsAddingTransition(!isAddingTransition);
+              setIsAddingState(false);
+              setSelectedStateForTransition(null);
+            }}
+            className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              isAddingTransition
+                ? 'bg-green-600 text-white hover:bg-green-700'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+            }`}
+          >
+            {isAddingTransition ? 'Cancelar' : 'Adicionar Transição'}
+          </button>
+        </Panel>
+        
+        {isAddingState && (
+          <Panel position="top-center">
+            <div className="bg-blue-100 border border-blue-300 rounded-md px-3 py-2 text-sm text-blue-800">
+              Clique no canvas para adicionar um estado
+            </div>
+          </Panel>
+        )}
+        
+        {isAddingTransition && (
+          <Panel position="top-center">
+            <div className="bg-green-100 border border-green-300 rounded-md px-3 py-2 text-sm text-green-800">
+              {!selectedStateForTransition 
+                ? 'Clique no estado de origem'
+                : 'Clique no estado de destino'
               }
-              return null;
-            })()}
-          </svg>
+            </div>
+          </Panel>
         )}
       </ReactFlow>
       
-      {/* Modal de contexto para o nó */}
-      {contextMenu.isOpen && contextMenu.node && (
-        <div 
-          className="fixed z-50 bg-white dark:bg-dark-700 border border-gray-200 dark:border-dark-600 rounded-md shadow-lg"
-          style={{ 
-            top: contextMenu.position.y, 
-            left: contextMenu.position.x,
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="px-4 py-2 font-bold border-b border-gray-200 dark:border-dark-600 text-gray-800 dark:text-gray-200">
-            Estado {contextMenu.node.data.label}
-          </div>
-          <button 
-            className="block w-full text-left px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-600"
-            onClick={handleSetInitial}
-          >
-            {contextMenu.node.data.isInitial ? 'Remover estado inicial' : 'Definir como estado inicial'}
-          </button>
-          <button 
-            className="block w-full text-left px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-600"
-            onClick={handleSetFinal}
-          >
-            {contextMenu.node.data.isFinal ? 'Remover estado final' : 'Definir como estado final'}
-          </button>
-          <button 
-            className="block w-full text-left px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-            onClick={handleDeleteState}
-          >
-            Excluir estado
-          </button>
-        </div>
-      )}
+      {/* Modal para adicionar símbolo de transição */}
+      <TransitionSymbolModal
+        isOpen={transitionModal.isOpen}
+        onClose={handleCloseModal}
+        onConfirm={handleAddTransition}
+        availableSymbols={alphabet}
+        sourceState={transitionModal.sourceId ? states[transitionModal.sourceId]?.label : ''}
+        targetState={transitionModal.targetId ? states[transitionModal.targetId]?.label : ''}
+      />
     </div>
   );
 };
 
-// Wrapper com ReactFlowProvider para garantir acesso aos hooks do ReactFlow
-const AutomatonCanvasWrapper = () => {
-  return (
-    <ReactFlowProvider>
-      <AutomatonCanvas />
-    </ReactFlowProvider>
-  );
-};
-
-export default AutomatonCanvasWrapper;
+export default AutomatonCanvas;

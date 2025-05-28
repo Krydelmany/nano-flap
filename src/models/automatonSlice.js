@@ -1,24 +1,24 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-// Definição das classes de autômatos
-class State {
-  constructor(id, label, x, y, isInitial = false, isFinal = false) {
-    this.id = id;
-    this.label = label;
-    this.x = x;
-    this.y = y;
-    this.isInitial = isInitial;
-    this.isFinal = isFinal;
-  }
+// Remover as classes e usar funções helper
+function createState(id, label, x, y, isInitial = false, isFinal = false) {
+  return {
+    id,
+    label,
+    x,
+    y,
+    isInitial,
+    isFinal,
+  };
 }
 
-class Transition {
-  constructor(from, to, symbol) {
-    this.id = `${from}-${symbol}-${to}`;
-    this.from = from;
-    this.to = to;
-    this.symbol = symbol;
-  }
+function createTransition(from, to, symbol) {
+  return {
+    id: `${from}-${symbol}-${to}`,
+    from,
+    to,
+    symbol,
+  };
 }
 
 // Estado inicial do Redux
@@ -37,6 +37,9 @@ const initialState = {
   currentSimulationStep: -1,
   simulationActive: false,
   error: null,
+  canvasAutomatons: [], // Lista de autômatos no canvas
+  selectedCanvasAutomatons: [], // Autômatos selecionados no canvas
+  automatonConnections: [], // Conexões entre autômatos
 };
 
 function generateUniqueId() {
@@ -514,7 +517,7 @@ export const automatonSlice = createSlice({
       }
 
       const StateId = `q${id}`;
-      const newState = new State(StateId, StateId, x, y, isInitial, isFinal);
+      const newState = createState(StateId, StateId, x, y, isInitial, isFinal);
       
       // Se for estado inicial, remover o status de inicial de outros estados
       if (isInitial) {
@@ -577,7 +580,7 @@ export const automatonSlice = createSlice({
         }
       }
       
-      const newTransition = new Transition(from, to, symbol);
+      const newTransition = createTransition(from, to, symbol);
       state.transitions[newTransition.id] = newTransition;
       state.error = null;
     },
@@ -806,6 +809,116 @@ export const automatonSlice = createSlice({
     clearSimulationResult: (state) => {
       state.simulationResult = null;
     },
+    addAutomatonToCanvas: (state, action) => {
+      const { automaton, position } = action.payload;
+      const canvasAutomaton = {
+        ...automaton,
+        canvasId: generateUniqueId(),
+        position: position || { x: 100, y: 100 },
+        size: { width: 200, height: 150 }
+      };
+      state.canvasAutomatons.push(canvasAutomaton);
+    },
+    
+    selectCanvasAutomaton: (state, action) => {
+      const { canvasId } = action.payload;
+      if (!state.selectedCanvasAutomatons.includes(canvasId)) {
+        state.selectedCanvasAutomatons.push(canvasId);
+      }
+    },
+    
+    deselectCanvasAutomaton: (state, action) => {
+      const { canvasId } = action.payload;
+      state.selectedCanvasAutomatons = state.selectedCanvasAutomatons.filter(
+        id => id !== canvasId
+      );
+    },
+    
+    connectAutomatons: (state, action) => {
+      const { fromCanvasId, toCanvasId, operation } = action.payload;
+      const connection = {
+        id: generateUniqueId(),
+        from: fromCanvasId,
+        to: toCanvasId,
+        operation, // 'union', 'concat', 'intersect'
+      };
+      state.automatonConnections.push(connection);
+    },
+    
+    executeAutomatonOperation: (state, action) => {
+      const { connectionId } = action.payload;
+      const connection = state.automatonConnections.find(c => c.id === connectionId);
+      
+      if (connection) {
+        const fromAutomaton = state.canvasAutomatons.find(a => a.canvasId === connection.from);
+        const toAutomaton = state.canvasAutomatons.find(a => a.canvasId === connection.to);
+        
+        if (fromAutomaton && toAutomaton) {
+          let result;
+          switch (connection.operation) {
+            case 'union':
+              result = unionAutomata(fromAutomaton, toAutomaton);
+              break;
+            case 'concat':
+              result = concatAutomata(fromAutomaton, toAutomaton);
+              break;
+            case 'intersect':
+              result = intersectAutomata(fromAutomaton, toAutomaton);
+              break;
+          }
+          
+          if (result) {
+            // Adicionar o resultado ao canvas
+            const resultPosition = {
+              x: Math.max(fromAutomaton.position.x, toAutomaton.position.x) + 250,
+              y: (fromAutomaton.position.y + toAutomaton.position.y) / 2
+            };
+            
+            state.canvasAutomatons.push({
+              ...result,
+              canvasId: generateUniqueId(),
+              position: resultPosition,
+              size: { width: 200, height: 150 }
+            });
+          }
+        }
+      }
+    },
+    
+    updateCanvasNodePositions: (state, action) => {
+      const { nodeChanges } = action.payload;
+      nodeChanges.forEach(change => {
+        if (change.type === 'position' && change.position) {
+          const automaton = state.canvasAutomatons.find(a => a.canvasId === change.id);
+          if (automaton) {
+            automaton.position = change.position;
+          }
+        }
+      });
+    },
+    
+    addStateToActiveAutomaton: (state, action) => {
+      const { x, y, isInitial = false, isFinal = false } = action.payload;
+      
+      // Encontrar o menor número disponível
+      let id = 0;
+      while (state.states[`q${id}`]) {
+        id++;
+      }
+      
+      const stateId = `q${id}`;
+      const newState = createState(stateId, stateId, x, y, isInitial, isFinal);
+      
+      // Se for estado inicial, remover o status de inicial de outros estados
+      if (isInitial) {
+        Object.keys(state.states).forEach(stateId => {
+          state.states[stateId].isInitial = false;
+        });
+      }
+      
+      state.states[stateId] = newState;
+      state.currentStateId += 1;
+    },
   },
 });
 
@@ -865,7 +978,14 @@ export const {
   composeIntersect,
   setActiveAutomaton,
   simulateInput,
-  clearSimulationResult
+  clearSimulationResult,
+  addAutomatonToCanvas,
+  selectCanvasAutomaton,
+  deselectCanvasAutomaton,
+  connectAutomatons,
+  executeAutomatonOperation,
+  updateCanvasNodePositions,
+  addStateToActiveAutomaton,
 } = automatonSlice.actions;
 
 export default automatonSlice.reducer;
