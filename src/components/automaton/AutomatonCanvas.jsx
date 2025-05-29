@@ -20,6 +20,7 @@ import {
   updateState,
 } from '../../models/automatonSlice';
 import TransitionSymbolModal from './TransitionSymbolModal';
+import ConfirmModal from '../common/ConfirmModal';
 
 const nodeTypes = {
   stateNode: StateNode,
@@ -42,51 +43,14 @@ const AutomatonCanvas = () => {
     targetId: null
   });
   
-  // Converter estados Redux para nós ReactFlow
-  useEffect(() => {
-    const nodeList = Object.values(states).map(state => ({
-      id: state.id,
-      type: 'stateNode',
-      position: { x: state.x, y: state.y },
-      data: { 
-        state,
-        onStateClick: handleStateClick,
-        onStateDelete: handleStateDelete,
-        onStateUpdate: handleStateUpdate,
-        isSelected: selectedStateForTransition === state.id,
-        isAddingTransition,
-        selectedStateForTransition, // Passar o estado selecionado
-      },
-    }));
-    setNodes(nodeList);
-  }, [states, selectedStateForTransition, isAddingTransition, setNodes]);
-
-  // Converter transições Redux para arestas ReactFlow
-  useEffect(() => {
-    const edgeList = Object.values(transitions).map(transition => ({
-      id: transition.id,
-      source: transition.from,
-      target: transition.to,
-      label: transition.symbol,
-      type: 'default',
-      animated: false,
-      style: { 
-        stroke: '#888', 
-        strokeWidth: 2,
-        strokeDasharray: '0',
-      },
-      labelStyle: { fill: '#000', fontWeight: 600 },
-      labelBgStyle: { fill: '#fff', fillOpacity: 0.8 },
-      markerEnd: {
-        type: 'arrow',
-        color: '#888',
-        width: 15,
-        height: 20,
-      },
-      data: { transition },
-    }));
-    setEdges(edgeList);
-  }, [transitions, setEdges]);
+  // Estado para modal de confirmação
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    type: 'danger',
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   // Manipular mudanças de posição dos nós
   const handleNodesChange = useCallback((changes) => {
@@ -148,6 +112,71 @@ const AutomatonCanvas = () => {
     }
   }, [isAddingTransition, selectedStateForTransition]);
 
+  // Manipular exclusão de estado
+  const handleStateDelete = useCallback((stateId) => {
+    const state = states[stateId];
+    setConfirmModal({
+      isOpen: true,
+      type: 'danger',
+      title: 'Excluir Estado',
+      message: `Tem certeza que deseja excluir o estado "${state?.label}"? Esta ação não pode ser desfeita.`,
+      onConfirm: () => {
+        dispatch(removeState(stateId));
+      }
+    });
+  }, [dispatch, states]);
+
+  // Manipular atualização de estado
+  const handleStateUpdate = useCallback((stateId, updates) => {
+    dispatch(updateState({ id: stateId, ...updates }));
+  }, [dispatch]);
+
+  // Converter estados Redux para nós ReactFlow
+  useEffect(() => {
+    const nodeList = Object.values(states).map(state => ({
+      id: state.id,
+      type: 'stateNode',
+      position: { x: state.x, y: state.y },
+      data: { 
+        state,
+        onStateClick: handleStateClick,
+        onStateDelete: handleStateDelete,
+        onStateUpdate: handleStateUpdate,
+        isSelected: selectedStateForTransition === state.id,
+        isAddingTransition,
+        selectedStateForTransition,
+      },
+    }));
+    setNodes(nodeList);
+  }, [states, selectedStateForTransition, isAddingTransition, setNodes, handleStateClick, handleStateDelete, handleStateUpdate]);
+
+  // Converter transições Redux para arestas ReactFlow
+  useEffect(() => {
+    const edgeList = Object.values(transitions).map(transition => ({
+      id: transition.id,
+      source: transition.from,
+      target: transition.to,
+      label: transition.symbol,
+      type: 'default',
+      animated: false,
+      style: { 
+        stroke: '#888', 
+        strokeWidth: 2,
+        strokeDasharray: '0',
+      },
+      labelStyle: { fill: '#000', fontWeight: 600 },
+      labelBgStyle: { fill: '#fff', fillOpacity: 0.8 },
+      markerEnd: {
+        type: 'arrow',
+        color: '#888',
+        width: 15,
+        height: 20,
+      },
+      data: { transition },
+    }));
+    setEdges(edgeList);
+  }, [transitions, setEdges]);
+
   // Função para adicionar a transição após confirmar no modal
   const handleAddTransition = useCallback((symbol) => {
     if (symbol && alphabet.includes(symbol)) {
@@ -183,24 +212,30 @@ const AutomatonCanvas = () => {
     });
   }, []);
 
-  // Manipular exclusão de estado
-  const handleStateDelete = useCallback((stateId) => {
-    if (window.confirm('Deseja remover este estado?')) {
-      dispatch(removeState(stateId));
-    }
-  }, [dispatch]);
-
-  // Manipular atualização de estado
-  const handleStateUpdate = useCallback((stateId, updates) => {
-    dispatch(updateState({ id: stateId, ...updates }));
-  }, [dispatch]);
-
   // Manipular clique em aresta para remover
   const handleEdgeClick = useCallback((event, edge) => {
-    if (window.confirm('Deseja remover esta transição?')) {
-      dispatch(removeTransition(edge.id));
-    }
+    const transition = edge.data.transition;
+    setConfirmModal({
+      isOpen: true,
+      type: 'warning',
+      title: 'Excluir Transição',
+      message: `Tem certeza que deseja excluir a transição "${transition.symbol}" entre os estados?`,
+      onConfirm: () => {
+        dispatch(removeTransition(edge.id));
+      }
+    });
   }, [dispatch]);
+
+  // Fechar modal de confirmação
+  const handleCloseConfirmModal = useCallback(() => {
+    setConfirmModal({
+      isOpen: false,
+      type: 'danger',
+      title: '',
+      message: '',
+      onConfirm: () => {}
+    });
+  }, []);
 
   return (
     <div className="h-full w-full">
@@ -280,6 +315,18 @@ const AutomatonCanvas = () => {
         availableSymbols={alphabet}
         sourceState={transitionModal.sourceId ? states[transitionModal.sourceId]?.label : ''}
         targetState={transitionModal.targetId ? states[transitionModal.targetId]?.label : ''}
+      />
+
+      {/* Modal de confirmação */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={handleCloseConfirmModal}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        type={confirmModal.type}
+        confirmText="Excluir"
+        cancelText="Cancelar"
       />
     </div>
   );
