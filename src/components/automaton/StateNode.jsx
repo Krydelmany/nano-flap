@@ -28,10 +28,8 @@ const StateNode = ({ data, selected }) => {
   };
 
   const handleDelete = () => {
-    if (window.confirm('Deseja remover este estado?')) {
-      if (onStateDelete) {
-        onStateDelete(state.id);
-      }
+    if (onStateDelete) {
+      onStateDelete(state.id);
     }
   };
 
